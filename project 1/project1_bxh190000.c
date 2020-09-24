@@ -17,8 +17,9 @@
      *
 */
 #include <stdio.h>
+#include <unistd.h>
 
-main(){
+int main(){
     int p = -5;
     
     // create 5 child process
