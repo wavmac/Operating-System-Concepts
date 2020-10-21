@@ -96,7 +96,7 @@ int main() {
     
     if(strcmp(splitter, "initfs") == 0){
     
-        preInitialization();
+        preInitialization(splitter);
         splitter = NULL;
                        
     } else if (strcmp(splitter, "q") == 0) {
@@ -105,20 +105,31 @@ int main() {
        write(fileDescriptor, &superBlock, BLOCK_SIZE);
        return 0;
      
-    } 
+    } else if (strcmp(splitter, "cpin") == 0) {
+        
+        
+        splitter = NULL;
+        
+    } else if (strcmp(splitter, "cpout") == 0) {
+        
+        splitter = NULL;
+    }
+    
   }
 }
 
-int preInitialization(){
+int preInitialization(char *parameters){
 
   char *n1, *n2;
   unsigned int numBlocks = 0, numInodes = 0;
   char *filepath;
   
-  filepath = strtok(NULL, " ");
-  n1 = strtok(NULL, " ");
-  n2 = strtok(NULL, " ");
-         
+  parameters = strtok(NULL, " ");
+  filepath = parameters;
+  parameters = strtok(NULL, " ");
+  n1 = parameters;
+  parameters = strtok(NULL, " ");
+  n2 = parameters;
       
   if(access(filepath, F_OK) != -1) {
       
@@ -138,7 +149,7 @@ int preInitialization(){
           		numBlocks = atoi(n1);
           		numInodes = atoi(n2);
           		
-          		if( initfs(filepath,numBlocks, numInodes )){
+          		if( initfs(filepath, numBlocks, numInodes )){
           		  printf("The file system is initialized\n");	
           		} else {
             		printf("Error initializing file system. Exiting... \n");
