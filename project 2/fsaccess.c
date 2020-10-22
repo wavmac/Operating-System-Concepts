@@ -172,9 +172,9 @@ int initfs(char* path, unsigned short blocks,unsigned short inodes) {
    unsigned short inodes_per_block= BLOCK_SIZE/INODE_SIZE; // = 16
    
    if((inodes%inodes_per_block) == 0)
-   superBlock.isize = inodes/inodes_per_block;
+    superBlock.isize = inodes/inodes_per_block;
    else
-   superBlock.isize = (inodes/inodes_per_block) + 1;
+    superBlock.isize = (inodes/inodes_per_block) + 1;
    
    if((fileDescriptor = open(path,O_RDWR|O_CREAT,0700))== -1)
        {
@@ -339,7 +339,11 @@ int copyIn(char *parameters) {
     }
     
     // initialize the v6-file inode
-    int vFile_data_block = 2 + superBlock.isize + countInode - 1;
+    int vFile_data_block = getFreeBlock(); // (unsolved, should look up superBlock.free)
+    if (vFile_data_block == -1)
+        return 0;
+
+    // vFile_data_block = 2 + superBlock.isize + countInode - 1;
     inode.flags = inode_alloc_flag | plain_file_flag | dir_access_rights; // flag for new plain small file
     inode.nlinks = 0; 
     inode.uid = 0;
@@ -373,6 +377,33 @@ int copyIn(char *parameters) {
     
 }
 
+int getFreeBlock(){
+    int acquired_data_block_number,i;
+    acquired_data_block_number = superBlock.free[superBlock.nfree--];
+    
+    if (superBlock.nfree == 0){
+        
+        if (superBlock.free[0] == 0){
+            printf("\n The v6 file system is full! Write failed!");
+            return -1;
+        }
+        
+        lseek(fileDescriptor, acquired_data_block_number*BLOCK_SIZE, SEEK_CUR);
+        read(fileDescriptor, superBlock.nfree, 2);
+        for (i = 0; i < FREE_SIZE; i++)
+            read(fileDescriptor, superBlock.free[i], 4);
+        
+        int index_data_block - acquired_data_block_number;
+        acquired_data_block_number = superBlock.free[superBlock.nfree--];
+        
+        // free the block originally contain free block index
+        add_block_to_free_list(index_data_block, buffer) 
+        
+    }
+    
+    return acquired_data_block_number;
+}
+
 int copyOut(char *parameters) {
     char *extFilePath, *vFile;
       
@@ -380,4 +411,4 @@ int copyOut(char *parameters) {
     vFile = parameters;
     parameters = strtok(NULL, " ");
     extFilePath = parameters;
-}
+});
