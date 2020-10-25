@@ -213,7 +213,7 @@ int initfs(char* path, unsigned short blocks,unsigned short inodes) {
    // Create root directory
    create_root();
  
-   for ( i = 0; i <= data_blocks_for_free_list; i++ ) {
+   for ( i = 0; i < data_blocks_for_free_list; i++ ) {
       add_block_to_free_list(i + 2 + superBlock.isize + 1, buffer);
    }
    
@@ -291,124 +291,223 @@ void create_root() {
 }
 
 int copyIn(char *parameters) {
-    char *extFilePath, *vFile;
-      
-    parameters = strtok(NULL, " ");
-    extFilePath = parameters;
-    parameters = strtok(NULL, " ");
-    vFile = parameters;
-    
-    if((fileDescriptor = open(***path to root ***,O_RDWR,0700))== -1){
-        printf("\n open() failed with the following error [%s]\n",strerror(errno));
-        return 0;
-    }
-    
-    // load the superblock data
-    lseek(fileDescriptor, BLOCK_SIZE, SEEK_SET);
-    read(fileDescriptor, superBlock.isize, 2);
-    read(fileDescriptor, superBlock.fsize, 2);
-    read(fileDescriptor, superBlock.nfree, 2);
-    read(fileDescriptor, superBlock.free, 2*100);
-    read(fileDescriptor, superBlock.ninode, 2);
-    read(fileDescriptor, superBlock.inode, 2*100);
-    read(fileDescriptor, superBlock.flock, 1);
-    read(fileDescriptor, superBlock.ilock, 1);
-    read(fileDescriptor, superBlock.fmod, 1);
-    read(fileDescriptor, superBlock.time, 2*2);
-    
-    // go to first data block to see if the v6-filename already exist
-    char existFilename[14];
-    unsigned int countInode = 0;
-    
-    lseek(fileDescriptor, (2 + superBlock.isize)*BLOCK_SIZE + 2, 0);
-    read(fileDescriptor, existFilename, 14);
-    while(existFilename != 0){
-        if (strcmp(existFilename, vFile) == 0){
-            printf("\n filename of the v6-File is already exist!");
-            return 0;
-        }
-        lseek(fileDescriptor, 2, SEEK_CUR);
-        read(fileDescriptor, existFilename, 14);
-        ++countInode;
-    }
-    
-    // open the external file and check if exist
-    if((fileDescriptor = open(extFilePath,O_RDONLY,0700))== -1){
-        printf("\n open() failed with the following error [%s]\n",strerror(errno));
-        return 0;
-    }
-    
-    // initialize the v6-file inode
-    int vFile_data_block = getFreeBlock(); // (unsolved, should look up superBlock.free)
-    if (vFile_data_block == -1)
-        return 0;
+  char *extFilePath, *vFile;
 
-    // vFile_data_block = 2 + superBlock.isize + countInode - 1;
-    inode.flags = inode_alloc_flag | plain_file_flag | dir_access_rights; // flag for new plain small file
-    inode.nlinks = 0; 
-    inode.uid = 0;
-    inode.gid = 0;
-    inode.size = BLOCK_SIZE;  // (unsolved, but occupy at least one data block)
-    inode.addr[0] = vFile_data_block;
-      
-    for( i = 1; i < ADDR_SIZE; i++ ) {
-      inode.addr[i] = 0;
+  parameters = strtok(NULL, " ");
+  extFilePath = parameters;
+  parameters = strtok(NULL, " ");
+  vFile = parameters;
+  
+  if((fileDescriptor = open(***path to root ***,O_RDWR,0700))== -1){
+      printf("\n open() failed with the following error [%s]\n",strerror(errno));
+      return 0;
+  }
+  
+  // load the superblock data
+  lseek(fileDescriptor, BLOCK_SIZE, SEEK_SET);
+  read(fileDescriptor, superBlock.isize, 2);
+  read(fileDescriptor, superBlock.fsize, 2);
+  read(fileDescriptor, superBlock.nfree, 2);
+  read(fileDescriptor, superBlock.free, 2*100);
+  read(fileDescriptor, superBlock.ninode, 2);
+  read(fileDescriptor, superBlock.inode, 2*100);
+  read(fileDescriptor, superBlock.flock, 1);
+  read(fileDescriptor, superBlock.ilock, 1);
+  read(fileDescriptor, superBlock.fmod, 1);
+  read(fileDescriptor, superBlock.time, 2*2);
+  
+  // go to first data block to see if the v6-filename already exist
+  char existFilename[14];
+  unsigned int countInode = 0;
+  
+  lseek(fileDescriptor, (2 + superBlock.isize)*BLOCK_SIZE + 2, 0);
+  read(fileDescriptor, existFilename, 14);
+  while(existFilename != 0){
+      if (strcmp(existFilename, vFile) == 0){
+          printf("\n filename of the v6-File is already exist!");
+          return 0;
+      }
+      lseek(fileDescriptor, 2, SEEK_CUR);
+      read(fileDescriptor, existFilename, 14);
+      ++countInode;
+  }
+  
+  // open the external file and check if exist
+  int extFileDescriptor;
+  if((extFileDescriptor = open(extFilePath,O_RDONLY,0700))== -1){
+      printf("\n open() failed with the following error [%s]\n",strerror(errno));
+      return 0;
+  }
+  
+  // initialize the v6-file inode
+  int vFile_data_block = getFreeBlock(); // should look up superBlock.free
+  if (vFile_data_block == -1)
+      return 0;
+
+  // vFile_data_block = 2 + superBlock.isize + countInode - 1;
+  inode.flags = inode_alloc_flag | plain_file_flag | dir_access_rights; // flag for new plain small file
+  inode.nlinks = 0; 
+  inode.uid = 0;
+  inode.gid = 0;
+  inode.size = BLOCK_SIZE;  // (unsolved, but occupy at least one data block)
+  inode.addr[0] = vFile_data_block;
+  
+  for( i = 1; i < ADDR_SIZE; i++ ) {
+    inode.addr[i] = 0;
+  }
+  
+  inode.actime[0] = 0;
+  inode.modtime[0] = 0;
+  inode.modtime[1] = 0;
+  
+  // copy the content, update nfree and free in superblock (update 'addr' and 'size' in vFile inode)
+
+  char ch[1];
+  int curr_block_bytes = 0;
+  short num_addr = 1;
+  lseek(fileDescriptor, vFile_data_block*BLOCK_SIZE, SEEK_SET);
+  while (read(extFileDescriptor, ch, 1)) { 
+    if (curr_block_bytes == BLOCK_SIZE){
+      // if the current data block is full
+      vFile_data_block = getFreeBlock();
+      inode.addr[num_addr] = vFile_data_block;
+      inode.size += BLOCK_SIZE;
+      ++num_addr;
+      curr_block_bytes = 0;
     }
+
+    write(fileDescriptor, arr, 1);
     
-    inode.actime[0] = 0;
-    inode.modtime[0] = 0;
-    inode.modtime[1] = 0;
-    
-    // copy the content, update nfree and free in superblock (possibly update addr in vFile inode)
-    
-    
-    
-    // update the directory in root data block 
-    dir_type vFile_dir;
-    vFile_dir.inode = countInode;
-    vFile_dir.filename = vFile;
-    
-    lseek(fileDescriptor, (2 + superBlock.isize)*BLOCK_SIZE+countInode*16, 0);
-    write(fileDescriptor, &vFile_dir, 16);
-    
-    // change the i-node entry of the root (specifically its addr)
-    inode = superBlock.inode[0]; // load the root inode in superblock (could have error)
-    inode.addr[countInode-1] = vFile_data_block;
+    ++curr_block_bytes;
+  }
+  
+  // update the directory in root data block
+  dir_type vFile_dir;
+  vFile_dir.inode = countInode;
+  vFile_dir.filename = vFile;
+  
+  lseek(fileDescriptor, (2 + superBlock.isize)*BLOCK_SIZE+countInode*16, 0);
+  write(fileDescriptor, &vFile_dir, 16);
+  
+  // store new v6-file inode
+  lseek(fileDescriptor, 2 * BLOCK_SIZE + (countInode-1)*INODE_SIZE, 0);
+  write(fileDescriptor, &inode, INODE_SIZE);
+
+  // change the i-node entry of the root (specifically only its addr)
+  /*lseek(fileDescriptor, 2 * BLOCK_SIZE + 12 + 4*countInode, 0);
+  write(fileDescriptor, &vFile_data_block, 4);*/
     
 }
 
 int getFreeBlock(){
-    int acquired_data_block_number,i;
-    acquired_data_block_number = superBlock.free[superBlock.nfree--];
-    
-    if (superBlock.nfree == 0){
-        
-        if (superBlock.free[0] == 0){
-            printf("\n The v6 file system is full! Write failed!");
-            return -1;
-        }
-        
-        lseek(fileDescriptor, acquired_data_block_number*BLOCK_SIZE, SEEK_CUR);
-        read(fileDescriptor, superBlock.nfree, 2);
-        for (i = 0; i < FREE_SIZE; i++)
-            read(fileDescriptor, superBlock.free[i], 4);
-        
-        int index_data_block - acquired_data_block_number;
-        acquired_data_block_number = superBlock.free[superBlock.nfree--];
-        
-        // free the block originally contain free block index
-        add_block_to_free_list(index_data_block, buffer) 
-        
-    }
-    
-    return acquired_data_block_number;
+  int acquired_data_block_number,i;
+  acquired_data_block_number = superBlock.free[superBlock.nfree--];
+  
+  if (superBlock.nfree == 0){
+      
+      if (superBlock.free[0] == 0){
+          printf("\n The v6 file system is full! Write failed!");
+          return -1;
+      }
+      
+      lseek(fileDescriptor, acquired_data_block_number*BLOCK_SIZE, SEEK_CUR);
+      read(fileDescriptor, superBlock.nfree, 2);
+      for (i = 0; i < FREE_SIZE; i++)
+          read(fileDescriptor, superBlock.free[i], 4);
+      
+      int index_data_block = acquired_data_block_number;
+      acquired_data_block_number = superBlock.free[superBlock.nfree--];
+      
+      // free the block originally contain indexes of free blocks
+      // add_block_to_free_list(index_data_block, buffer) //don't implement this time??
+      
+  }
+  
+  return acquired_data_block_number;
 }
 
+int getFreeInode(){
+  // only use it when the superBlock.isize*16 > 200(superBlock.ninode)
+
+  return 0;
+}
 int copyOut(char *parameters) {
-    char *extFilePath, *vFile;
-      
-    parameters = strtok(NULL, " ");
-    vFile = parameters;
-    parameters = strtok(NULL, " ");
-    extFilePath = parameters;
-});
+  char *extFilePath, *vFile;
+
+  parameters = strtok(NULL, " ");
+  extFilePath = parameters;
+  parameters = strtok(NULL, " ");
+  vFile = parameters;
+  
+  if((fileDescriptor = open(***path to root ***,O_RDWR,0700))== -1){
+      printf("\n open() failed with the following error [%s]\n",strerror(errno));
+      return 0;
+  }
+  
+  // load the superblock data
+  lseek(fileDescriptor, BLOCK_SIZE, SEEK_SET);
+  read(fileDescriptor, superBlock.isize, 2);
+  read(fileDescriptor, superBlock.fsize, 2);
+  read(fileDescriptor, superBlock.nfree, 2);
+  read(fileDescriptor, superBlock.free, 2*100);
+  read(fileDescriptor, superBlock.ninode, 2);
+  read(fileDescriptor, superBlock.inode, 2*100);
+  read(fileDescriptor, superBlock.flock, 1);
+  read(fileDescriptor, superBlock.ilock, 1);
+  read(fileDescriptor, superBlock.fmod, 1);
+  read(fileDescriptor, superBlock.time, 2*2);
+  
+  // go to first data block to see if the v6-filename exist
+  char existFilename[14];
+  unsigned int countInode = 0;
+  
+  lseek(fileDescriptor, (2 + superBlock.isize)*BLOCK_SIZE + 2, 0);
+  read(fileDescriptor, existFilename, 14);
+  while(existFilename != 0){
+      if (strcmp(existFilename, vFile) == 0){
+          printf("\n filename of the v6-File is found!");
+          break;
+      }
+      lseek(fileDescriptor, 2, SEEK_CUR);
+      read(fileDescriptor, existFilename, 14);
+      ++countInode;
+  }
+  
+  // create the new external file
+  int extFileDescriptor;
+  if((extFileDescriptor = open(extFilePath,O_RDONLY,0700))== -1){
+      printf("\n open() failed with the following error [%s]\n",strerror(errno));
+      return 0;
+  }
+  
+  // read the inode entry of the v6-file and get the addr array
+  lseek(fileDescriptor, 2*BLOCK_SIZE+INODE_SIZE*(countInode-1), SEEK_SET);
+  read(fileDescriptor, inode.flags, 2);
+  read(fileDescriptor, inode.nlinks, 2);
+  read(fileDescriptor, inode.uid, 2);
+  read(fileDescriptor, inode.gid, 2);
+  read(fileDescriptor, inode.size, 4);
+  read(fileDescriptor, inode.addr, 44);
+  read(fileDescriptor, inode.actime, 4);
+  read(fileDescriptor, inode.modtime, 4);
+
+  // copy the content into the new external file, 
+  /*char ch[1];
+  int curr_block_bytes = 0;
+  short num_addr = 1;
+  lseek(fileDescriptor, vFile_data_block*BLOCK_SIZE, SEEK_SET);
+  while (read(extFileDescriptor, ch, 1)) { 
+    if (curr_block_bytes == BLOCK_SIZE){
+      // if the current data block is full
+      vFile_data_block = getFreeBlock();
+      inode.addr[num_addr] = vFile_data_block;
+      ++num_addr;
+      curr_block_bytes = 0;
+    }
+
+    write(fileDescriptor, arr, 1);
+    
+    ++curr_block_bytes;
+  }*/
+  
+}
