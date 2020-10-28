@@ -386,6 +386,8 @@ int copyIn(char *parameters) {
   dir_type vFile_dir;
   vFile_dir.inode = countInode;
   for (i = 0; i < 14; i++){
+    if (vFile[i] == '\0')
+      break;
     vFile_dir.filename[i] = vFile[i];
   }
   
@@ -399,7 +401,10 @@ int copyIn(char *parameters) {
   // change the i-node entry of the root (specifically only its addr)
   /*lseek(fileDescriptor, 2 * BLOCK_SIZE + 12 + 4*countInode, 0);
   write(fileDescriptor, &vFile_data_block, 4);*/
-    
+  
+  lseek(fileDescriptor, BLOCK_SIZE, SEEK_SET);
+  write(fileDescriptor, &superBlock, BLOCK_SIZE);
+
   return 1;
 }
 
@@ -480,18 +485,19 @@ int copyOut(char *parameters) {
   char *extFilePath, *vFile;
 
   parameters = strtok(NULL, " ");
-  extFilePath = parameters;
-  parameters = strtok(NULL, " ");
   vFile = parameters;
+  parameters = strtok(NULL, " ");
+  extFilePath = parameters;
   
-  if((fileDescriptor = open("/disk",O_RDWR,0700))== -1){
+  if((fileDescriptor = open("disk",O_RDWR,0700))== -1){
     printf("\n open() failed with the following error [%s]\n",strerror(errno));
     return 0;
   }
   
   // load the superblock data
   readSuper();
-  
+  showSuper();
+
   // go to first data block to see if the v6-filename exist
   char existFilename[14];
   unsigned int countInode = 0;
@@ -511,10 +517,7 @@ int copyOut(char *parameters) {
 
   // create the new external file
   int extFileDescriptor;
-  if((extFileDescriptor = open(extFilePath,O_RDWR,0700))== -1){
-    printf("\n open() failed with the following error [%s]\n",strerror(errno));
-    return 0;
-  }
+  extFileDescriptor = open(extFilePath,O_RDWR|O_CREAT,0700);
   
   // read the inode entry of the v6-file and get the addr array
   readInode(countInode);
@@ -522,17 +525,22 @@ int copyOut(char *parameters) {
   // copy the contentinto the new external file
   char ch[1];
   int curr_block_bytes = 0;
-  short num_addr = 1;
+  unsigned short num_addr = 0;
   lseek(fileDescriptor, inode.addr[0]*BLOCK_SIZE, SEEK_SET);
-  while (read(fileDescriptor, ch, 1)) { 
+  read(fileDescriptor, ch, 1);
+  while (ch != '\0') { 
     write(extFileDescriptor, ch, 1);
     ++curr_block_bytes;
     
     if (curr_block_bytes == BLOCK_SIZE){
       // if the current data block is copied completely
       ++num_addr;
+      if (inode.addr[num_addr] == 0)
+        break;
       lseek(fileDescriptor, inode.addr[num_addr]*BLOCK_SIZE, SEEK_SET);
       curr_block_bytes = 0;
     }
+    
+    read(fileDescriptor, ch, 1);
   }
 }
