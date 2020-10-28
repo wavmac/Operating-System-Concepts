@@ -376,6 +376,7 @@ int copyIn(char *parameters) {
       inode.size += BLOCK_SIZE;
       ++num_addr;
       curr_block_bytes = 0;
+      lseek(fileDescriptor, vFile_data_block*BLOCK_SIZE, SEEK_SET);
     }
 
     write(fileDescriptor, ch, 1);
@@ -528,7 +529,7 @@ int copyOut(char *parameters) {
   unsigned short num_addr = 0;
   lseek(fileDescriptor, inode.addr[0]*BLOCK_SIZE, SEEK_SET);
   read(fileDescriptor, ch, 1);
-  while (ch != '\0') { 
+  while (ch[0] != 0) { 
     write(extFileDescriptor, ch, 1);
     ++curr_block_bytes;
     
