@@ -15,6 +15,13 @@
  File name is limited to 14 characters.
  ***********************************************************************/
 
+/*
+ * Name: Bo-Yu Huang
+ * NetID: bxh190000
+ * Project 2 part 1
+ * 
+*/
+
 #include<stdio.h>
 #include<fcntl.h>
 #include<unistd.h>
@@ -30,7 +37,6 @@
 
 
 // Superblock Structure
-//#pragma pack(1)
 typedef struct {
   unsigned short isize;
   unsigned short fsize;
@@ -47,7 +53,6 @@ typedef struct {
 superblock_type superBlock;
 
 // I-Node Structure
-
 typedef struct {
   unsigned short flags;
   unsigned short nlinks;
@@ -61,6 +66,7 @@ typedef struct {
 
 inode_type inode;
 
+// Directory structure
 typedef struct {
   unsigned short inode;
   unsigned char filename[14];
@@ -68,6 +74,7 @@ typedef struct {
 
 dir_type root;
 
+char v6FileName[14];
 int fileDescriptor ;		//file descriptor 
 const unsigned short inode_alloc_flag = 0100000;
 const unsigned short dir_flag = 040000;
@@ -77,6 +84,7 @@ const unsigned short dir_access_rights = 000777; // User, Group, & World have al
 const unsigned short INODE_SIZE = 64; // inode has been doubled
 
 // function defined
+void setFilename(char *parameters);
 int preInitialization(char *parameters);
 int initfs(char* path, unsigned short total_blcks,unsigned short total_inodes);
 void add_block_to_free_list( int blocknumber , unsigned int *empty_buffer );
@@ -96,9 +104,9 @@ int main() {
   unsigned int numBlocks = 0, numInodes = 0;
   char *filepath;
   printf("Size of super block = %d , size of i-node = %d\n",sizeof(superBlock),sizeof(inode));
-  
+  printf("");
   while(1) {
-    printf("\nEnter command:\n");
+    printf("\nEnter command or 'help' for command instruction:\n");
 
     scanf(" %[^\n]s", input);
     splitter = strtok(input," ");
@@ -108,14 +116,44 @@ int main() {
         preInitialization(splitter);
         splitter = NULL;
                        
+    } else if (strcmp(splitter, "v6Name") == 0){
+        splitter = strtok(NULL, " ");
+        setFilename(splitter);
+        splitter = NULL;
+
     } else if (strcmp(splitter, "cpin") == 0) {
+
+        if (v6FileName == NULL || v6FileName[0] == '\0'){
+          printf("Choose a v6-file system by entering filename of it using command: v6Name <filename>\n");
+          continue;
+        }
+
+        if (copyIn(splitter)){
+          printf("\nSuccessfully copy in!\n");
+        }
         
-        copyIn(splitter);
         splitter = NULL;
 
     } else if (strcmp(splitter, "cpout") == 0) {
+
+        if (v6FileName == NULL || v6FileName[0] == '\0'){
+          printf("Choose a v6-file system by entering filename of it using command: v6Name <filename>\n");
+          continue;
+        }
+
+        if (copyOut(splitter)){
+          printf("\nSuccessfully copy out!\n");
+        }
         
-        copyOut(splitter);
+        splitter = NULL;
+
+    } else if (strcmp(splitter, "help") == 0){
+
+        printf("\nInitalization v6 file system: initfs <filename> <# of block> <# of i-nodes>\n");
+        printf("\nChoose the v6 file system: v6Name <filename>\n");
+        printf("\ncopy external file into v6 file system: cpin <externalfile> <v6-file>\n");
+        printf("\ncopy file in v6 file system out to external file: cpout <v6-file> <externalfile>\n");
+        printf("\nexit the program: q\n");
         splitter = NULL;
 
     } else if (strcmp(splitter, "q") == 0) {
@@ -125,6 +163,31 @@ int main() {
        return 0;
     }
   }
+}
+
+void setFilename(char *parameters){
+  
+  // set up the name of the v6 file system 
+  int i,j;
+  for (i = 0; i < 14; i++){
+    if (parameters[i] == '\0'){
+      for (j = i; j < 14; j++)
+        v6FileName[j] = '\0';
+      break;
+    }
+    v6FileName[i] = parameters[i];
+  }
+
+  if((fileDescriptor = open(v6FileName,O_RDWR,0700))== -1) {
+    printf("\n No such file exist or open() failed with the following error [%s]\n",strerror(errno));
+    v6FileName[0] = '\0';
+    return;
+  }
+
+  printf("The current v6 file path (name) is %s\n",v6FileName);
+  
+  readSuper();
+  showSuper();
 }
 
 int preInitialization(char *parameters){
@@ -139,7 +202,7 @@ int preInitialization(char *parameters){
   n1 = parameters;
   parameters = strtok(NULL, " ");
   n2 = parameters;
-      
+  
   if(access(filepath, F_OK) != -1) {
       
       if(fileDescriptor = open(filepath, O_RDWR, 0600) == -1){
@@ -159,6 +222,7 @@ int preInitialization(char *parameters){
           		numInodes = atoi(n2);
           		
           		if( initfs(filepath, numBlocks, numInodes )){
+                setFilename(filepath);
           		  printf("The file system is initialized\n");	
           		} else {
             		printf("Error initializing file system. Exiting... \n");
@@ -283,7 +347,7 @@ void create_root() {
   inode.modtime[1] = 0;
   
   lseek(fileDescriptor, 2 * BLOCK_SIZE, 0);
-  write(fileDescriptor, &inode, INODE_SIZE);   // 
+  write(fileDescriptor, &inode, INODE_SIZE);
   
   lseek(fileDescriptor, root_data_block*BLOCK_SIZE, 0);
   write(fileDescriptor, &root, 16);
@@ -304,14 +368,14 @@ int copyIn(char *parameters) {
   parameters = strtok(NULL, " ");
   vFile = parameters;
   
-  if((fileDescriptor = open("disk",O_RDWR,0700))== -1){
-    printf("\n open() failed with the following error [%s]\n",strerror(errno));
+  if((fileDescriptor = open(v6FileName,O_RDWR,0700))== -1){
+    printf("\n v6 file system open() failed with the following error [%s]\n",strerror(errno));
+    printf("The current v6 file path (name) is %s\n",v6FileName);
     return 0;
   }
   
   // load the superblock data
   readSuper();
-  showSuper();
   
   // go to first data block to see if the v6-filename already exist
   char existFilename[14];
@@ -321,9 +385,9 @@ int copyIn(char *parameters) {
   read(fileDescriptor, &existFilename, 14);
   
   while(existFilename[0] != '\0'){
-    printf("%s\n",existFilename);
+    printf("Existing filename: %s\n",existFilename);
     if (strcmp(existFilename, vFile) == 0){
-      printf("\n filename of the v6-File is already exist!");
+      printf("\n filename of the v6-File is already exist! copy in failed! Abort....\n");
       return 0;
     }
     lseek(fileDescriptor, 2, SEEK_CUR);
@@ -334,14 +398,14 @@ int copyIn(char *parameters) {
   // open the external file and check if exist
   int extFileDescriptor;
   if((extFileDescriptor = open(extFilePath,O_RDONLY))== -1){
-    printf("\n open() failed with the following error [%s]\n",strerror(errno));
+    printf("\n external file open() failed with the following error [%s]\n",strerror(errno));
     return 0;
   }
 
   // initialize the v6-file inode
   unsigned int vFile_data_block = getFreeBlock(); // should look up superBlock.free
   if (vFile_data_block == -1){
-    printf("\n The v6 file system is full!");
+    printf("\n The v6 file system is full!\n");
     return 0;
   }
   //printf("free block number: %i\n",vFile_data_block);
@@ -372,6 +436,10 @@ int copyIn(char *parameters) {
     if (curr_block_bytes == BLOCK_SIZE){
       // if the current data block is full
       vFile_data_block = getFreeBlock();
+      if (vFile_data_block == -1){
+        printf("\n The v6 file system is full!\n");
+        return 0;
+      }
       inode.addr[num_addr] = vFile_data_block;
       inode.size += BLOCK_SIZE;
       ++num_addr;
@@ -403,6 +471,7 @@ int copyIn(char *parameters) {
   /*lseek(fileDescriptor, 2 * BLOCK_SIZE + 12 + 4*countInode, 0);
   write(fileDescriptor, &vFile_data_block, 4);*/
   
+  // update superBlock
   lseek(fileDescriptor, BLOCK_SIZE, SEEK_SET);
   write(fileDescriptor, &superBlock, BLOCK_SIZE);
 
@@ -410,6 +479,8 @@ int copyIn(char *parameters) {
 }
 
 void showSuper(){
+  printf("SuperBlock info \n\n");
+
   printf("superBlock.isize: %hu\n", superBlock.isize);
   printf("superBlock.fsize: %hu\n", superBlock.fsize);
   printf("superBlock.nfree: %hu\n", superBlock.nfree);
@@ -419,7 +490,7 @@ void showSuper(){
   printf("superBlock.flock: %c\n", superBlock.flock);
   printf("superBlock.ilock: %c\n", superBlock.ilock);
   printf("superBlock.fmod: %hu\n", superBlock.fmod);
-  printf("superBlock.time[1]: %hu\n", superBlock.time[1]);
+  printf("superBlock.time[1]: %hu\n\n", superBlock.time[1]);
 }
 
 
@@ -436,13 +507,11 @@ void readSuper(){
   read(fileDescriptor, &superBlock.ilock, 1);
   read(fileDescriptor, &superBlock.fmod, 2);
   read(fileDescriptor, &superBlock.time, 2*2);
-  
-  //read(fileDescriptor, &ch, 2);
-  //superBlock.time[1] = (unsigned short)*ch;
 }
 
 void readInode(unsigned int count){
   lseek(fileDescriptor, 2*BLOCK_SIZE+INODE_SIZE*(count-1), SEEK_SET);
+
   read(fileDescriptor, &inode.flags, 2);
   read(fileDescriptor, &inode.nlinks, 2);
   read(fileDescriptor, &inode.uid, 2);
@@ -457,9 +526,9 @@ unsigned int getFreeBlock(){
   --superBlock.nfree;
   int acquired_free_data_block = superBlock.free[superBlock.nfree];
   if (superBlock.nfree == 0){
-    printf("check if nfree is empty!");
+    printf("check if nfree is empty!\n");
     if (superBlock.free[0] == 0){
-      printf("\n The v6 file system is full! Write failed!");
+      printf("\n The v6 file system is full! Write failed! Abort...\n");
       return -1;
     }
     
@@ -470,7 +539,7 @@ unsigned int getFreeBlock(){
     return superBlock.free[--superBlock.nfree];
     
     // free the block originally contain indexes of free blocks
-    // add_block_to_free_list(index_data_block, buffer) //don't implement this time??
+    // add_block_to_free_list(index_data_block, buffer) 
     
   }
 
@@ -482,6 +551,7 @@ unsigned short getFreeInode(){
 
   return 0;
 }
+
 int copyOut(char *parameters) {
   char *extFilePath, *vFile;
 
@@ -490,14 +560,13 @@ int copyOut(char *parameters) {
   parameters = strtok(NULL, " ");
   extFilePath = parameters;
   
-  if((fileDescriptor = open("disk",O_RDWR,0700))== -1){
-    printf("\n open() failed with the following error [%s]\n",strerror(errno));
+  if((fileDescriptor = open(v6FileName,O_RDWR,0700))== -1){
+    printf("\n v6 file system open() failed with the following error [%s]\n",strerror(errno));
     return 0;
   }
   
   // load the superblock data
   readSuper();
-  showSuper();
 
   // go to first data block to see if the v6-filename exist
   char existFilename[14];
@@ -506,9 +575,9 @@ int copyOut(char *parameters) {
   lseek(fileDescriptor, (2 + superBlock.isize)*BLOCK_SIZE + 2, 0);
   read(fileDescriptor, &existFilename, 14);
   while(existFilename[0] != '\0'){
-    printf("%s\n",existFilename);
+    printf("Existing filename: %s\n",existFilename);
     if (strcmp(existFilename, vFile) == 0){
-      printf("\n filename of the v6-File is found!");
+      printf("\n filename of the v6-File is found! Ready to copy out!\n");
       break;
     }
     lseek(fileDescriptor, 2, SEEK_CUR);
@@ -516,6 +585,11 @@ int copyOut(char *parameters) {
     ++countInode;
   }
 
+  // if no such file name exist in v6 file system, break
+  if (existFilename[0] == '\0'){
+    printf("\n filename of the v6-File is not found! Abort...\n");
+    return 0;
+  }
   // create the new external file
   int extFileDescriptor;
   extFileDescriptor = open(extFilePath,O_RDWR|O_CREAT,0700);
@@ -544,4 +618,6 @@ int copyOut(char *parameters) {
     
     read(fileDescriptor, ch, 1);
   }
+
+  return 1;
 }
