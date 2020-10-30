@@ -2,22 +2,30 @@
  
  
  
- This program allows user to do two things: 
+ This program allows user to do five things: 
    1. initfs: Initilizes the file system and redesigning the Unix file system to accept large 
       files of up tp 4GB, expands the free array to 152 elements, expands the i-node array to 
       200 elemnts, doubles the i-node size to 64 bytes and other new features as well.
    2. Quit: save all work and exit the program.
+   3. cpin: copy the content of an external file into v6 file
+   4. cpout: copy the content of a v6 file out to a new external file
+   5. v6Name: set up the current working v6 file system
    
  User Input:
      - initfs (file path) (# of total system blocks) (# of System i-nodes)
+     - v6Name (v6 file system name)
+     - cpin (external file name) (v6 file name)
+     - cpout (v6 file name) (external file name)
      - q
+     - help
      
  File name is limited to 14 characters.
  ***********************************************************************/
 
 /*
- * Name: Bo-Yu Huang
- * NetID: bxh190000
+ * Team member1: Bo-Yu Huang, bxh190000
+ * Team member2: William Vrana, wav031000
+ *  
  * Project 2 part 1
  * 
 */
@@ -412,7 +420,7 @@ int copyIn(char *parameters) {
 
   // vFile_data_block = 2 + superBlock.isize + countInode - 1;
   inode.flags = inode_alloc_flag | plain_file_flag | dir_access_rights; // flag for new plain small file
-  inode.nlinks = 0; 
+  inode.nlinks = 0;
   inode.uid = 0;
   inode.gid = 0;
   inode.size = BLOCK_SIZE;  // (unsolved, but occupy at least one data block)
@@ -590,6 +598,7 @@ int copyOut(char *parameters) {
     printf("\n filename of the v6-File is not found! Abort...\n");
     return 0;
   }
+  
   // create the new external file
   int extFileDescriptor;
   extFileDescriptor = open(extFilePath,O_RDWR|O_CREAT,0700);
