@@ -1,7 +1,19 @@
+/*
+ * Author 1: Bo-Yu Huang
+ * Net ID: bxh190000
+ * Author 2: William Vrana
+ * Net ID: wav031000
+ * CS 5348.001 Operating Systems
+ * Prof.S Venkatesan 
+ * Project 2 - 1
+ * 
+ ***************************
+ * Compilation: -$ gcc -o fsaccess fsaccess.c
+ * Run using: -$ ./fsaccess
+***********************************************************************/
+
 /***********************************************************************
- 
- 
- 
+  
  This program allows user to do five things: 
    1. initfs: Initilizes the file system and redesigning the Unix file system to accept large 
       files of up tp 4GB, expands the free array to 152 elements, expands the i-node array to 
@@ -22,14 +34,6 @@
  File name is limited to 14 characters.
  ***********************************************************************/
 
-/*
- * Team member1: Bo-Yu Huang, bxh190000
- * Team member2: William Vrana, wav031000
- *  
- * Project 2 part 1
- * 
-*/
-
 #include<stdio.h>
 #include<fcntl.h>
 #include<unistd.h>
@@ -42,7 +46,6 @@
 #define BLOCK_SIZE 1024    
 #define ADDR_SIZE 11
 #define INPUT_SIZE 256
-
 
 // Superblock Structure
 typedef struct {
@@ -173,9 +176,13 @@ int main() {
   }
 }
 
+
 void setFilename(char *parameters){
-  
-  // set up the name of the v6 file system 
+  /* 
+  * Set up the name of the v6 file system
+  * Read the superBlock info in the corresponding v6 file system
+  */
+
   int i,j;
   for (i = 0; i < 14; i++){
     if (parameters[i] == '\0'){
@@ -199,6 +206,10 @@ void setFilename(char *parameters){
 }
 
 int preInitialization(char *parameters){
+  /* 
+  * Decode the input parameters
+  * finish initializing the v6 file system 
+  */
 
   char *n1, *n2;
   unsigned int numBlocks = 0, numInodes = 0;
@@ -241,7 +252,12 @@ int preInitialization(char *parameters){
 }
 
 int initfs(char* path, unsigned short blocks,unsigned short inodes) {
-
+  /* 
+  * finish initializing the v6 file system 
+  * create superBlock and corresponding INode and data block
+  * create buffer and reuse them to write data block
+  */
+  
   unsigned int buffer[BLOCK_SIZE/4];
   int bytes_written;
   
@@ -275,7 +291,7 @@ int initfs(char* path, unsigned short blocks,unsigned short inodes) {
   superBlock.time[0] = 0;
   superBlock.time[1] = 1970;
   
-  // writing zeroes to all inodes in ilist
+  // writing zeroes to reusable buffer
   for (i = 0; i < BLOCK_SIZE/4; i++) 
     buffer[i] = 0;
       
@@ -298,8 +314,11 @@ int initfs(char* path, unsigned short blocks,unsigned short inodes) {
   return 1;
 }
 
-// Add Data blocks to free list
 void add_block_to_free_list(int block_number,  unsigned int *empty_buffer){
+  /* 
+  * Add Data blocks to free list 
+  * change nfree and free in superBlock simultaneously
+  */
 
   if ( superBlock.nfree == FREE_SIZE ) {
 
@@ -329,8 +348,12 @@ void add_block_to_free_list(int block_number,  unsigned int *empty_buffer){
   ++superBlock.nfree;
 }
 
-// Create root directory
+
 void create_root() {
+  /* 
+  * Create root directory 
+  * create superBlock and corresponding INode and directory entry in root data block
+  */
 
   int root_data_block = 2 + superBlock.isize; // Allocating first data block to root directory
   int i;
@@ -369,6 +392,15 @@ void create_root() {
 }
 
 int copyIn(char *parameters) {
+  /* 
+  * copy external file into v6 file 
+  * check if the v6-filename already exist
+  * open external file and check if exist
+  * create a new v6 file in file system 
+  * copy the content byte by byte from external file into v6 file
+  * update superBlock and store new v6 file I-node
+  */
+
   char *extFilePath, *vFile;
 
   parameters = strtok(NULL, " ");
@@ -385,7 +417,7 @@ int copyIn(char *parameters) {
   // load the superblock data
   readSuper();
   
-  // go to first data block to see if the v6-filename already exist
+  // go to first data block to see if the v6-filename already exist (future improvement: handle number of root data blocks > 1)
   char existFilename[14];
   unsigned int countInode = 0;
   
@@ -393,6 +425,16 @@ int copyIn(char *parameters) {
   read(fileDescriptor, &existFilename, 14);
   
   while(existFilename[0] != '\0'){
+    /* if (countInode == BLOCK_SIZE / 16){
+        // only when number of root data blocks > 1
+        countInode = 0;
+        num_root_data_block += 1;  // initialized to 1
+        lseek(fileDescriptor, 2*BLOCK_SIZE + 12 + 4*(num_root_data_block-1), SEEK_SET);  //inode.addr[num_root_data_block-1] of superBlock
+        int tmp;
+        read(fileDescriptor, &tmp, 4);
+        lseek(fileDescriptor, tmp*BLOCK_SIZE, SEEK_SET);
+    }*/
+
     printf("Existing filename: %s\n",existFilename);
     if (strcmp(existFilename, vFile) == 0){
       printf("\n filename of the v6-File is already exist! copy in failed! Abort....\n");
@@ -418,7 +460,6 @@ int copyIn(char *parameters) {
   }
   //printf("free block number: %i\n",vFile_data_block);
 
-  // vFile_data_block = 2 + superBlock.isize + countInode - 1;
   inode.flags = inode_alloc_flag | plain_file_flag | dir_access_rights; // flag for new plain small file
   inode.nlinks = 0;
   inode.uid = 0;
@@ -467,6 +508,31 @@ int copyIn(char *parameters) {
       break;
     vFile_dir.filename[i] = vFile[i];
   }
+
+  // change the i-node entry of the root (specifically only its addr, because the number of file in the root could be larger than 64)
+  /* if (countInode == BLOCK_SIZE / 16){
+    // the current root data block happens to be full, get the new free block for root
+    // num_root_data_block: current number of full data blocks that belongs to root
+    // update Inode of root
+    
+    unsigned int new_root_data_block = getFreeBlock();
+    lseek(fileDescriptor, 2 * BLOCK_SIZE + 8, 0);
+    write(fileDescriptor, (num_root_data_block+1)*BLOCK_SIZE, 4);
+    lseek(fileDescriptor, 4*num_root_data_block, SEEK_CUR);
+    write(fileDescriptor, new_root_data_block, 4);
+
+    lseek(fileDescriptor, new_root_data_block*BLOCK_SIZE, 0);
+    write(fileDescriptor, &vFile_dir, 16);
+  } else {
+    // the current root data block is not full
+    // num_root_data_block: current number of full data blocks that belongs to root
+    // last_root_data_block = inode.addr[num_root_data_block-1] of superBlock
+    // update data block of root
+
+    lseek(fileDescriptor, last_root_data_block*BLOCK_SIZE+countInode*16, 0);
+    write(fileDescriptor, &vFile_dir, 16);
+  }
+  */
   
   lseek(fileDescriptor, (2 + superBlock.isize)*BLOCK_SIZE+countInode*16, 0);
   write(fileDescriptor, &vFile_dir, 16);
@@ -474,10 +540,6 @@ int copyIn(char *parameters) {
   // store new v6-file inode
   lseek(fileDescriptor, 2 * BLOCK_SIZE + (countInode-1)*INODE_SIZE, 0);
   write(fileDescriptor, &inode, INODE_SIZE);
-
-  // change the i-node entry of the root (specifically only its addr)
-  /*lseek(fileDescriptor, 2 * BLOCK_SIZE + 12 + 4*countInode, 0);
-  write(fileDescriptor, &vFile_data_block, 4);*/
   
   // update superBlock
   lseek(fileDescriptor, BLOCK_SIZE, SEEK_SET);
@@ -487,6 +549,10 @@ int copyIn(char *parameters) {
 }
 
 void showSuper(){
+  /*
+   * display the superBlock info
+  */
+
   printf("SuperBlock info \n\n");
 
   printf("superBlock.isize: %hu\n", superBlock.isize);
@@ -503,6 +569,10 @@ void showSuper(){
 
 
 void readSuper(){
+  /*
+   * load the superBlock info
+  */
+
   lseek(fileDescriptor, BLOCK_SIZE, 0);
   
   read(fileDescriptor, &superBlock.isize, 2);
@@ -518,6 +588,10 @@ void readSuper(){
 }
 
 void readInode(unsigned int count){
+  /*
+   * load the I-node info according to the I-node number
+  */
+
   lseek(fileDescriptor, 2*BLOCK_SIZE+INODE_SIZE*(count-1), SEEK_SET);
 
   read(fileDescriptor, &inode.flags, 2);
@@ -531,6 +605,11 @@ void readInode(unsigned int count){
 }
 
 unsigned int getFreeBlock(){
+  /*
+   * get the new free data block
+   * if it's empty, go to next data block that stores indexes of free data block 
+  */
+
   --superBlock.nfree;
   int acquired_free_data_block = superBlock.free[superBlock.nfree];
   if (superBlock.nfree == 0){
@@ -555,12 +634,24 @@ unsigned int getFreeBlock(){
 }
 
 unsigned short getFreeInode(){
-  // only use it when the superBlock.isize*16 > 200(superBlock.ninode)
+  /*
+   * get the new I-node entry
+   * only use it when the superBlock.isize*16 > 200 (superBlock.ninode) 
+  */
+  
 
   return 0;
 }
 
 int copyOut(char *parameters) {
+  /* 
+  * copy v6 file out to an external file 
+  * check if the v6-filename exist
+  * open external file and overwrite it
+  * copy the content byte by byte from v6 file out to the external file
+  * stop when enters '\0' character
+  */
+
   char *extFilePath, *vFile;
 
   parameters = strtok(NULL, " ");
