@@ -10,13 +10,28 @@
 
 > main function
 
-- *initfs(filepath, # of blocks, # of I-nodes)*
+***************************
+ * Compilation: -$ gcc -o fsaccess fsaccess.c  
+ * Run using: -$ ./fsaccess  
+***********************************************************************
+
+- *initfs (filepath) (# of blocks) (# of I-nodes)*
 
   This function initializes the v6-file system. All data blocks are in the free list except the root block.
 
-- *cpin(externalfile, v6-file)*
+- *cpin (externalfile) (v6-file)*  
 
-- *cpout(v6-file, externalfile)*
+  copy the content of an external file into v6 file
+
+- *cpout (v6-file) (externalfile)*  
+
+  copy the content of a v6 file out to a new external file
+
+- *v6Name (v6 file system name)*  
+  
+  set up the current working v6 file system
+  
+- *help*
 
 - *q*
 
