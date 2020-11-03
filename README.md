@@ -8,12 +8,12 @@
 
 ### Project 2 is about v6-file system
 
-> main function
-
 ***************************
  * Compilation: -$ gcc -o fsaccess fsaccess.c  
  * Run using: -$ ./fsaccess  
 ***********************************************************************
+
+> main functions
 
 - *initfs (filepath) (# of blocks) (# of I-nodes)*
 
