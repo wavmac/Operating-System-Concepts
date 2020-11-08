@@ -5,7 +5,7 @@
  * Net ID: wav031000
  * CS 5348.001 Operating Systems
  * Prof.S Venkatesan 
- * Project 2 - 1
+ * Project 2
  * 
  ***************************
  * Compilation: -$ gcc -o fsaccess fsaccess.c
@@ -22,6 +22,9 @@
    3. cpin: copy the content of an external file into v6 file
    4. cpout: copy the content of a v6 file out to a new external file
    5. v6Name: set up the current working v6 file system
+   6. mkdir: create the v6 directory. It should have two entries '.' and '..'
+   7. remove: Delete the file v6_file from the v6 file system.
+   8. cd: change working directory of the v6 file system to the v6 directory
    
  User Input:
      - initfs (file path) (# of total system blocks) (# of System i-nodes)
@@ -29,6 +32,9 @@
      - cpin (external file name) (v6 file name)
      - cpout (v6 file name) (external file name)
      - q
+     - rm (v6 file)
+     - mkdir (v6 directory)
+     - cd (v6 directory)
      - help
      
  File name is limited to 14 characters.
@@ -85,7 +91,8 @@ typedef struct {
 
 dir_type root;
 
-char v6FileName[14];
+char v6FileName[14];        // current working v6 file system
+
 int fileDescriptor ;		//file descriptor 
 const unsigned short inode_alloc_flag = 0100000;
 const unsigned short dir_flag = 040000;
@@ -106,7 +113,191 @@ void showSuper();
 void readSuper();
 void readInode(unsigned int count);
 unsigned int getFreeBlock();
-unsigned short getFreeInode();
+/* new features*/
+char *currDirPath;           // current working path in v6 file system
+unsigned int getFreeInode();
+unsigned int createDir(char *paramters);
+void addDir(unsigned int par_Inode, unsigned int par_data_block, unsigned dir_pos_in_data_blcok, char *newDirName);
+unsigned int removeFile(char *paramters);
+void changeDir(char *newPath);
+
+unsigned int createDir(char *paramters){
+  /*
+  * check the existence of each file and get the necessary parameters
+  * go to addDir(...) for each directory creation
+  */
+
+  // does it support multiple creations?
+  // ex: mkdir dir1/dir2
+  
+  // notice the currDirPath!
+  unsigned int par_Inode = 1, par_data_block = 2 + superBlock.isize, dir_pos_in_data_blcok = 0;
+  char *par_dir_name, *curr_dir_name;
+
+  // go to root data block
+  char existFilename[14];
+  unsigned int inode_entry=1;
+  
+  lseek(fileDescriptor, (2 + superBlock.isize)*BLOCK_SIZE+2, 0);
+  read(fileDescriptor, &existFilename, 14);
+  while(existFilename[0] != '\0'){
+    printf("Existing filename: %s\n",existFilename);
+    if (strcmp(existFilename, par_dir_name) == 0){
+      unsigned short flag;
+      lseek(fileDescriptor, 2*BLOCK_SIZE+inode_entry*INODE_SIZE,0);
+      read(fileDescriptor,&flag,2);
+      if(flag >= (inode_alloc_flag || dir_flag))
+        printf("\n filename of the v6-directory is found!\n");
+      else {
+        printf("\n filename is v6-file, not directory type!\n");
+        return -1;
+      }
+      break;
+    }
+    
+    read(fileDescriptor, inode_entry, 2);
+    read(fileDescriptor, existFilename, 14);
+    ++dir_pos_in_data_blcok;
+  }
+
+  addDir(par_Inode, par_data_block, dir_pos_in_data_blcok, curr_dir_name);
+
+  /************************************************************************/
+  // go to the current directory path to check if directory already exist
+  /*dir_pos_in_data_blcok = 0;
+  while (){
+    
+  }
+
+
+  addDir(par_Inode, par_data_block, dir_pos_in_data_blcok, curr_dir_name);
+  
+  // go through creation 
+  while(0){
+    
+  }*/
+}
+
+void addDir(unsigned int par_Inode, unsigned int par_data_block, unsigned dir_pos_in_data_blcok, char *newDirName){
+  /* 
+  * Create new directory: 
+  * Initialize its data block with two directory entries (16 bytes) and its i-node in i-node blocks
+  * Add a new directory entry (16 bytes) in its parent data block
+  */
+
+  int new_data_block = getFreeBlock();
+  int i;
+  
+  dir_type new_dir;
+  if (getFreeInode != -1)
+    new_dir.inode = getFreeInode();   // get available inode number.
+  new_dir.filename[0] = '.';
+  new_dir.filename[1] = '\0';
+  
+  inode.flags = inode_alloc_flag | dir_flag | dir_access_rights;   		// flag for directory type
+  inode.nlinks = 0; 
+  inode.uid = 0;
+  inode.gid = 0;
+  inode.size = INODE_SIZE;
+  inode.addr[0] = new_data_block;
+  
+  for( i = 1; i < ADDR_SIZE; i++ ) {
+    inode.addr[i] = 0;
+  }
+  
+  inode.actime[0] = 0;
+  inode.modtime[0] = 0;
+  inode.modtime[1] = 0;
+  
+  // wrtie the i-node entry
+  lseek(fileDescriptor, 2 * BLOCK_SIZE+(new_dir.inode-1)*INODE_SIZE, 0);
+  write(fileDescriptor, &inode, INODE_SIZE);
+  
+  // wrtie on the self data block
+  lseek(fileDescriptor, new_data_block*BLOCK_SIZE, 0);
+  write(fileDescriptor, &new_dir, 16);
+  
+  dir_type par_dir;
+  par.inode = par_Inode;
+  par_dir.filename[0] = '.';
+  par_dir.filename[1] = '.';
+  par_dir.filename[2] = '\0';
+  
+  write(fileDescriptor, &par_dir, 16);
+  
+  // wrtie on the parent data block
+  int i;
+  
+  for (i = 0; i < 14; i++){
+    if (newDirName[i] == '\0'){
+      new_dir.filename[i] = '\0';
+      break;
+    }
+    new_dir.filename[i] = newDirName[i];
+  }
+  
+  lseek(fileDescriptor, par_data_block*BLOCK_SIZE + dir_pos_in_data_blcok*16, 0);
+  write(fileDescriptor, &new_dir, 16);
+}
+
+unsigned int getFreeInode(){
+  /*
+  * omit superBlock.ninode and superBlock inode[]
+  * instead, search through the i-node block 
+  */
+  
+  unsigned int count = 1;
+  unsigned int curr = 2;
+  lseek(fileDescriptor, 2 * BLOCK_SIZE + INODE_SIZE, 0);
+  
+  while (curr != 0){
+      // if curr(flag) == 0, available i-node space is found
+      read(fileDescriptor, &curr, 2);
+      if (curr == 1){
+          // if curr == 1, reach the first data block (i-node entry of root in root data block)
+          printf("The i-node block for the v6 file system is full!");
+          return -1;
+      }
+      lseek(fileDescriptor, 62, SEEK_CUR);
+      ++count;
+  }
+  
+  return count;
+}
+
+
+unsigned int removeFile(char *paramters){
+  /*
+  * remove a file (filepath) starts from current directory path
+  * 
+  */  
+
+  // go to the current directory path to check if v6 file exist, if file not exist, abort
+  
+  /***** go to the corresdoning v6 file and start deleting *****/
+  
+  // go to the inode entry of the v6 file, find data blocks in inode.addr[] and free them
+  // do we add those freed data blocks into superBlock.free?
+  
+  
+  
+  
+  // free the inode entry and directory type in working directory data block
+  
+  
+}
+
+void changeDir(char *newPath){
+  /*
+  * change the global variable "currDirPath"
+  * support cd .././..
+  */
+    
+  // looping through the entire directory command path
+
+
+    
+}
 
 int main() {
  
@@ -118,6 +309,8 @@ int main() {
   printf("");
   while(1) {
     printf("\nEnter command or 'help' for command instruction:\n");
+    printf(currDirPath);
+    printf("\n");
 
     scanf(" %[^\n]s", input);
     splitter = strtok(input," ");
@@ -504,8 +697,10 @@ int copyIn(char *parameters) {
   dir_type vFile_dir;
   vFile_dir.inode = countInode;
   for (i = 0; i < 14; i++){
-    if (vFile[i] == '\0')
+    if (vFile[i] == '\0'){
+      vFile_dir.filename[i] = '\0';
       break;
+    }
     vFile_dir.filename[i] = vFile[i];
   }
 
@@ -633,15 +828,6 @@ unsigned int getFreeBlock(){
   return acquired_free_data_block;
 }
 
-unsigned short getFreeInode(){
-  /*
-   * get the new I-node entry
-   * only use it when the superBlock.isize*16 > 200 (superBlock.ninode) 
-  */
-  
-
-  return 0;
-}
 
 int copyOut(char *parameters) {
   /* 
