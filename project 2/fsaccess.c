@@ -82,6 +82,7 @@ typedef struct {
 } inode_type; 
 
 inode_type dirInode;
+unsigned short dir_inode_entry;
 inode_type fileInode;
 
 // Directory structure
@@ -111,8 +112,8 @@ void create_root();
 
 void showSuper();
 void readSuper();
-void readDirInode(unsigned int entry);
-void readFileInode(unsigned int entry);
+void readDirInode(unsigned short entry);
+void readFileInode(unsigned short entry);
 unsigned int getInodeAddr(unsigned short inode_entry, unsigned short num_inode_addr);
 unsigned int getFreeBlock();
 unsigned short getFreeInode();
@@ -120,8 +121,7 @@ unsigned short getFreeInode();
 int copyIn(char *parameters);
 int copyOut(char *parameters);
 
-/* new features*/
-char currDirPath[30];           // current working path in v6 file system
+char currDirPath[50];           // current working path in v6 file system
 unsigned int createDir(char *parameters);
 unsigned short addDir(unsigned short num_dir_inode_addr, unsigned short dir_pos_in_data_blcok, char *newDirName);
 unsigned int removeFile(char *parameters);
@@ -129,27 +129,28 @@ unsigned int changeDir(char *parameters);
 
 unsigned int createDir(char *parameters){
   /*
+  * Recursive function until parameters == NULL
   * check the existence of each file and get the necessary parameters
+  * update dirInode after each recursive call
   * go to addDir(...) for each directory creation
   */
 
-  // notice the currDirPath!
+  // dirInode is corresponding to currDirPath
   printf("commands: %s\n",parameters);
   
   char *dir_name;
   dir_name = strtok_r(NULL, "/", &parameters);
   printf("Executing directory name: %s\n",dir_name);
   
-  printf("Left commands: %s\n",parameters);
+  printf("Left commands: %s\n\n",parameters);
   
   // go to current directory
   char existFilename[14];
-  unsigned int dir_inode_entry = 0;
   unsigned short countDir = 0;          // used to jump to the next dirInode.addr[] data block
   unsigned short num_dir_inode_addr = 0;
 
   lseek(fileDescriptor, dirInode.addr[num_dir_inode_addr]*BLOCK_SIZE+2, 0);
-  read(fileDescriptor, &existFilename, 14);
+  read(fileDescriptor, existFilename, 14);
 
   while(existFilename[0] != '\0'){
     if (countDir == BLOCK_SIZE / 16){
@@ -174,7 +175,7 @@ unsigned int createDir(char *parameters){
     }
     
     read(fileDescriptor, &dir_inode_entry, 2);
-    read(fileDescriptor, &existFilename, 14);
+    read(fileDescriptor, existFilename, 14);
     ++countDir;
   }
 
@@ -326,23 +327,24 @@ unsigned int changeDir(char *parameters){
   dir_name = strtok_r(NULL, "/", &parameters);
   printf("Executing directory name: %s\n",dir_name);
   
-  printf("Left commands: %s\n",parameters);
+  printf("Left commands: %s\n\n",parameters);
 
   if (strcmp(v6FileName, dir_name) == 0){
 
     // if it starts from root 
-    readDirInode(1);
-    memset(currDirPath, 0, strlen(currDirPath));
+    setFilename(dir_name);
+
+    if (!changeDir(parameters))
+      return 0;
 
   } else {
 
     // go to current directory
-    unsigned int dir_inode_entry = 0;
     unsigned short countDir = 0;          // used to jump to the next dirInode.addr[] data block
     unsigned short num_dir_inode_addr = 0;
 
     lseek(fileDescriptor, dirInode.addr[num_dir_inode_addr]*BLOCK_SIZE+2, 0);
-    read(fileDescriptor, &existFilename, 14);
+    read(fileDescriptor, existFilename, 14);
 
     while(existFilename[0] != '\0'){
       if (countDir == BLOCK_SIZE / 16){
@@ -359,7 +361,28 @@ unsigned int changeDir(char *parameters){
         if(flag >= (inode_alloc_flag | dir_flag)){
           printf("\n filename of the v6-directory is found!\n");
           readDirInode(dir_inode_entry);
+
+          if (strcmp(dir_name, ".") == 0) // directory itself, do nothing
+            break;
+          else if (strcmp(dir_name, "..") == 0){
+            // parent directory
+            
+            unsigned short L = strlen(currDirPath),i;
+            currDirPath[L-1] = '\0';
+            for (i = L-2; i >= 0; i--){
+              if (currDirPath[i] == '/')
+                break;
+              else if (currDirPath[i] == ':'){
+                currDirPath[i+1] = '/';
+                break;
+              }
+              currDirPath[i] = '\0';
+            }
+
+            break;
           
+          }
+
           // Add on to the currDirPath
           unsigned short L1 = strlen(currDirPath), L2 = strlen(dir_name),i;
           for (i = 0; i < L2; i++){
@@ -377,14 +400,14 @@ unsigned int changeDir(char *parameters){
       }
       
       read(fileDescriptor, &dir_inode_entry, 2);
-      read(fileDescriptor, &existFilename, 14);
+      read(fileDescriptor, existFilename, 14);
       ++countDir;
     }
 
-  }
-
-  if (existFilename[0] == '\0' || !changeDir(parameters))
+    if (existFilename[0] == '\0' || !changeDir(parameters))
       return 0;
+  
+  }
   
   return 1;
 }
@@ -769,7 +792,7 @@ void readSuper(){
   read(fileDescriptor, &superBlock.time, 2*2);
 }
 
-void readDirInode(unsigned int entry){
+void readDirInode(unsigned short entry){
   /*
    * load the directory I-node info according to the I-node number
   */
@@ -784,9 +807,11 @@ void readDirInode(unsigned int entry){
   read(fileDescriptor, &dirInode.addr, 4*ADDR_SIZE);
   read(fileDescriptor, &dirInode.actime, 4);
   read(fileDescriptor, &dirInode.modtime, 4);
+
+  dir_inode_entry = entry;
 }
 
-void readFileInode(unsigned int entry){
+void readFileInode(unsigned short entry){
   /*
    * load the file I-node info according to the I-node number
   */
@@ -877,6 +902,11 @@ int copyIn(char *parameters) {
   extFilePath = parameters;
   parameters = strtok(NULL, " ");
   vFile = parameters;
+
+  if (strlen(vFile) > 14){
+    printf("The length of the v6 filename exceeds 14!\n");
+    return 0;
+  }
   
   if((fileDescriptor = open(v6FileName,O_RDWR,0700))== -1){
     printf("\n v6 file system open() failed with the following error [%s]\n",strerror(errno));
@@ -891,12 +921,9 @@ int copyIn(char *parameters) {
   char existFilename[14];
   unsigned int countDir = 0;            // used ti jump to the next dirInode.addr[] data block adn track the position in current data block
   unsigned short num_dir_inode_addr = 0;
-  unsigned short dir_inode_entry = 1;   // 1 only for root (need revised) 
-
-  readDirInode(dir_inode_entry);
 
   lseek(fileDescriptor, dirInode.addr[num_dir_inode_addr]*BLOCK_SIZE + 2, 0);
-  read(fileDescriptor, &existFilename, 14);
+  read(fileDescriptor, existFilename, 14);
   
   while(existFilename[0] != '\0'){
     if (countDir == BLOCK_SIZE / 16){
@@ -911,7 +938,7 @@ int copyIn(char *parameters) {
       return 0;
     }
     lseek(fileDescriptor, 2, SEEK_CUR);
-    read(fileDescriptor, &existFilename, 14);
+    read(fileDescriptor, existFilename, 14);
     ++countDir;
   }
 
@@ -993,7 +1020,7 @@ int copyIn(char *parameters) {
     // update Inode of the directory
     
     unsigned int new_data_block = getFreeBlock();
-    lseek(fileDescriptor, 2 * BLOCK_SIZE + dir_inode_entry*INODE_SIZE + 12 + 4*num_dir_inode_addr, 0);
+    lseek(fileDescriptor, 2 * BLOCK_SIZE + (dir_inode_entry-1)*INODE_SIZE + 12 + 4*num_dir_inode_addr, 0);
     write(fileDescriptor, &new_data_block, 4);
 
     lseek(fileDescriptor, new_data_block*BLOCK_SIZE, 0);
@@ -1049,12 +1076,11 @@ int copyOut(char *parameters) {
   unsigned short file_inode_entry;
   unsigned short countDir = 0;          // used to jump to the next dirInode.addr[] data block
   unsigned short num_dir_inode_addr = 0;
-  unsigned short dir_inode_entry = 1;   // 1 only for root (need revised) 
   
   readDirInode(dir_inode_entry);
 
   lseek(fileDescriptor, dirInode.addr[num_dir_inode_addr]*BLOCK_SIZE + 2, 0);
-  read(fileDescriptor, &existFilename, 14);
+  read(fileDescriptor, existFilename, 14);
 
   while(existFilename[0] != '\0'){
     if (countDir == BLOCK_SIZE / 16){
