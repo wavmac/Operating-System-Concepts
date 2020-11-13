@@ -329,11 +329,13 @@ unsigned int changeDir(char *parameters){
   
   printf("Left commands: %s\n\n",parameters);
 
+  unsigned short tmp_dir_inode_entry = dir_inode_entry;
+
   if (strcmp(v6FileName, dir_name) == 0){
 
-    // if it starts from root 
+    // if the directory is the system name, it starts from root 
     setFilename(dir_name);
-
+    
     if (!changeDir(parameters))
       return 0;
 
@@ -404,8 +406,10 @@ unsigned int changeDir(char *parameters){
       ++countDir;
     }
 
-    if (existFilename[0] == '\0' || !changeDir(parameters))
+    if (existFilename[0] == '\0' || !changeDir(parameters)){
+      readDirInode(tmp_dir_inode_entry);
       return 0;
+    }
   
   }
   
