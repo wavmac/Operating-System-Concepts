@@ -31,8 +31,26 @@
   
   set up the current working v6 file system
   
+- mkdir  
+  
+  create the v6 directory. It should have two entries '.' and '..'
+  
+- rm (v6 file)  
+  
+  Delete the file v6_file from the v6 file system.
+
+- cd (v6 directory)  
+  
+  change working directory of the v6 file system to the v6 directory
+
+- ls  
+
+  display all the files in current directory
+  
 - *help*
 
 - *q*
 
   This command saves all changes and quit.
+  
+#### File name is limited to 14 characters.
