@@ -25,6 +25,7 @@
    6. mkdir: create the v6 directory. It should have two entries '.' and '..'
    7. remove: Delete the file v6_file from the v6 file system.
    8. cd: change working directory of the v6 file system to the v6 directory
+   9. ls: display all the files in current directory
    
  User Input:
      - initfs (file path) (# of total system blocks) (# of System i-nodes)
@@ -35,6 +36,7 @@
      - rm (v6 file)
      - mkdir (v6 directory)
      - cd (v6 directory)
+     - ls
      - help
      
  File name is limited to 14 characters.
@@ -124,8 +126,9 @@ int copyOut(char *parameters);
 char currDirPath[50];           // current working path in v6 file system
 unsigned int createDir(char *parameters);
 unsigned short addDir(unsigned short num_dir_inode_addr, unsigned short dir_pos_in_data_blcok, char *newDirName);
-unsigned int removeFile(char *parameters);
+unsigned int removeFile(char *rmFileName);
 unsigned int changeDir(char *parameters);
+void displayFilesInDir();
 
 unsigned int createDir(char *parameters){
   /*
@@ -292,16 +295,58 @@ unsigned short addDir(unsigned short num_dir_inode_addr, unsigned short dir_pos_
   return new_dir.inode;
 }
 
-unsigned int removeFile(char *parameters){
+unsigned int removeFile(char *rmFileName){
   /*
   * remove a file (filepath) starts from current directory path
-  * 
+  * if a directory contains no plain files, it can't be deleted, otherwise not.
   */  
+  
+  /*** go to the current directory path to check if v6 file exist, if file not exist, abort ***/
+  char existFilename[14];
+  unsigned short countDir = 2;          // start from the 3rd file
+  unsigned short num_dir_inode_addr = 0;
+  unsigned short rm_file_inode_entry;
 
-  // go to the current directory path to check if v6 file exist, if file not exist, abort
+  lseek(fileDescriptor, dirInode.addr[num_dir_inode_addr]*BLOCK_SIZE+32, 0);
+  read(fileDescriptor, &rm_file_inode_entry, 2);
+  read(fileDescriptor, existFilename, 14);
+
+  while(existFilename[0] != '\0'){
+    if (countDir == BLOCK_SIZE / 16){
+      // only when number of data blocks > 1
+      countDir = 0;
+      lseek(fileDescriptor, dirInode.addr[++num_dir_inode_addr]*BLOCK_SIZE, SEEK_SET);
+    }
+
+    printf("Existing filename: %s\n",existFilename);
+    if (strcmp(existFilename, rmFileName) == 0){
+      unsigned short flag;
+      lseek(fileDescriptor, 2*BLOCK_SIZE+(rm_file_inode_entry-1)*INODE_SIZE,0);
+      read(fileDescriptor,&flag,2);
+      
+      // no case of duplicate names in both dir and plain type files 
+      if(flag >= (inode_alloc_flag | dir_flag)){
+        printf("\n deleted file type is a directory!\n");
+      }
+      else {
+        printf("\n deleted file type is a plain file!\n");
+      }
+
+      break;
+    }
+    
+    read(fileDescriptor, &rm_file_inode_entry, 2);
+    read(fileDescriptor, existFilename, 14);
+    ++countDir;
+  }
+
+  if (existFilename[0] == '\0')
+    printf("\n File doesn't exist\n");
+
+  /*** go to the corresdoning v6 file and start deleting ***/
   
-  /***** go to the corresdoning v6 file and start deleting *****/
-  
+
+
   // go to the inode entry of the v6 file, find data blocks in inode.addr[] and free them
   // do we add those freed data blocks into superBlock.free?
   
@@ -368,7 +413,6 @@ unsigned int changeDir(char *parameters){
             break;
           else if (strcmp(dir_name, "..") == 0){
             // parent directory
-            
             unsigned short L = strlen(currDirPath),i;
             currDirPath[L-1] = '\0';
             for (i = L-2; i >= 0; i--){
@@ -382,7 +426,6 @@ unsigned int changeDir(char *parameters){
             }
 
             break;
-          
           }
 
           // Add on to the currDirPath
@@ -415,6 +458,50 @@ unsigned int changeDir(char *parameters){
   
   return 1;
 }
+
+void displayFilesInDir(){
+  /*
+  * display all the files (including directory and plain files in current directory)
+  */
+
+  char existFilename[14];
+  unsigned short countDir = 2;          // start from the 3rd file
+  unsigned short num_dir_inode_addr = 0;
+  unsigned short tmp_inode_entry;
+
+  lseek(fileDescriptor, dirInode.addr[num_dir_inode_addr]*BLOCK_SIZE+32, 0);
+  read(fileDescriptor, &tmp_inode_entry, 2);
+  read(fileDescriptor, existFilename, 14);
+  printf("Existing file:  \n");
+
+  while(existFilename[0] != '\0'){
+    if (countDir%4 == 2)
+      printf("\n");
+
+    if (countDir == BLOCK_SIZE / 16){
+      // when number of data blocks > 1
+      countDir = 0;
+      lseek(fileDescriptor, dirInode.addr[++num_dir_inode_addr]*BLOCK_SIZE, SEEK_SET);
+    }
+    
+    unsigned short flag;
+    lseek(fileDescriptor, 2*BLOCK_SIZE+(tmp_inode_entry-1)*INODE_SIZE,0);
+    read(fileDescriptor,&flag,2);
+    if(flag >= (inode_alloc_flag | dir_flag)){
+      printf("%s(dir type)    ",existFilename);
+    }
+    else {
+      printf("%s    ",existFilename);
+    }
+    
+    lseek(fileDescriptor, dirInode.addr[num_dir_inode_addr]*BLOCK_SIZE+(++countDir)*16, 0);
+
+    read(fileDescriptor, &tmp_inode_entry, 2);
+    read(fileDescriptor, existFilename, 14);
+  }
+
+}
+
 
 int main() {
  
@@ -508,6 +595,17 @@ int main() {
 
       splitter = NULL;
 
+    } else if (strcmp(splitter, "ls") == 0){
+
+      if (v6FileName == NULL || v6FileName[0] == '\0'){
+        printf("Choose a v6-file system by entering filename of it using command: v6Name <filename>\n");
+        continue;
+      }
+
+      displayFilesInDir();
+
+      splitter = NULL;
+
     } else if (strcmp(splitter, "help") == 0){
 
         printf("\nInitalization v6 file system: initfs <filename> <# of block> <# of i-nodes>\n");
@@ -517,6 +615,7 @@ int main() {
         printf("\nRemove file: rm <v6-file>\n");
         printf("\nCreate new directory: mkdir <v6dir>\n");
         printf("\nChange current directory: cd <v6dir>\n");
+        printf("\nDisplay files in current directory: ls\n");
         printf("\nExit the program: q\n");
         splitter = NULL;
 
@@ -959,7 +1058,7 @@ int copyIn(char *parameters) {
     printf("\n The v6 file system is full!\n");
     return 0;
   }
-  //printf("free block number: %i\n",vFile_data_block);
+  
   inode_type file_inode;
   file_inode.flags = inode_alloc_flag | plain_file_flag | dir_access_rights; // flag for new plain small file
   file_inode.nlinks = 0;
