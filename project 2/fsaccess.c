@@ -143,8 +143,13 @@ unsigned int createDir(char *parameters){
   
   char *dir_name;
   dir_name = strtok_r(NULL, "/", &parameters);
+  if(strlen(dir_name) > 14){
+    printf("Directory names cannot exceed 14 characters");
+    return 1;
+  }
   printf("Executing directory name: %s\n",dir_name);
-  
+  if (parameters[0]=='\0')
+    parameters = NULL;
   printf("Left commands: %s\n\n",parameters);
   
   // go to current directory
@@ -371,15 +376,18 @@ unsigned int changeDir(char *parameters){
   char *dir_name, existFilename[14];
   dir_name = strtok_r(NULL, "/", &parameters);
   printf("Executing directory name: %s\n",dir_name);
-  
+  if (parameters[0]=='\0')
+    parameters = NULL;
   printf("Left commands: %s\n\n",parameters);
 
   unsigned short tmp_dir_inode_entry = dir_inode_entry;
-
-  if (strcmp(v6FileName, dir_name) == 0){
+  char test[15];
+  strcpy(test,v6FileName);
+  strcat(test,":");
+  if (strcmp(test, dir_name) == 0){
 
     // if the directory is the system name, it starts from root 
-    setFilename(dir_name);
+    setFilename(v6FileName);
     
     if (!changeDir(parameters))
       return 0;
@@ -577,9 +585,8 @@ int main() {
       }
 
       splitter = strtok(NULL, " ");
-      if(createDir(splitter))
+      if(createDir(splitter)==0)
         printf("\nDirectory successfully created!\n");
-
       splitter = NULL;
 
     } else if (strcmp(splitter, "cd") == 0){
